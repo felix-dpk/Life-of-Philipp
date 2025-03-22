@@ -37,6 +37,18 @@
       z-index: 10;
     }
     
+    #level {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 20px;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 5px 10px;
+      border-radius: 5px;
+      z-index: 10;
+    }
+    
     #player {
       position: absolute;
       width: 40px;
@@ -116,6 +128,41 @@
       left: 5px;
     }
     
+    .bush {
+      position: absolute;
+      width: 70px;
+      height: 40px;
+      background-color: #2E8B57;
+      border-radius: 50% 50% 50% 50%;
+      bottom: 50px;
+      z-index: 2;
+    }
+    
+    .small-tree {
+      position: absolute;
+      bottom: 50px;
+      z-index: 2;
+    }
+    
+    .small-tree-trunk {
+      width: 15px;
+      height: 30px;
+      background-color: #8B4513;
+      position: absolute;
+      bottom: 0;
+      left: 10px;
+    }
+    
+    .small-tree-top {
+      width: 35px;
+      height: 45px;
+      background-color: #228B22;
+      border-radius: 50%;
+      position: absolute;
+      bottom: 25px;
+      left: 0;
+    }
+    
     #ground {
       position: absolute;
       width: 100%;
@@ -123,6 +170,12 @@
       bottom: 0;
       background-color: #8B4513;
       z-index: 1;
+    }
+    
+    .platform {
+      position: absolute;
+      background-color: #CD853F;
+      z-index: 3;
     }
     
     #start-screen, #game-over {
@@ -161,21 +214,26 @@
 <body>
   <div id="game-container">
     <div id="score">Poop Collected: 0</div>
+    <div id="level">Level: 1</div>
     <div id="player">
       <svg viewBox="0 0 40 80" xmlns="http://www.w3.org/2000/svg">
-        <!-- Head -->
+        <!-- Head with dark brown hair -->
         <circle cx="20" cy="15" r="10" fill="#FFD700" />
+        <path d="M10 15 A10 10 0 0 1 30 15 L30 5 A10 10 0 0 0 10 5 Z" fill="#5D4037" />
         
-        <!-- Body -->
-        <rect x="15" y="25" width="10" height="25" fill="#1E90FF" />
+        <!-- Body with white t-shirt -->
+        <rect x="15" y="25" width="10" height="25" fill="#FFFFFF" />
         
         <!-- Legs -->
         <rect x="15" y="50" width="4" height="20" fill="#000080" />
         <rect x="25" y="50" width="4" height="20" fill="#000080" />
         
         <!-- Arms -->
-        <rect x="5" y="25" width="10" height="4" fill="#1E90FF" />
-        <rect x="25" y="25" width="15" height="4" fill="#1E90FF" />
+        <rect x="5" y="25" width="10" height="4" fill="#FFFFFF" />
+        <rect x="25" y="25" width="15" height="4" fill="#FFFFFF" />
+        
+        <!-- Plastic bag in hand -->
+        <rect x="35" y="23" width="5" height="8" fill="rgba(255, 255, 255, 0.7)" />
         
         <!-- Leash -->
         <line x1="35" y1="27" x2="45" y2="27" stroke="#000000" stroke-width="1" />
@@ -216,6 +274,7 @@
       <p>Walk your Shiba through the parks of Cologne.</p>
       <p>Collect poop and avoid other dogs!</p>
       <p>Use Left/Right arrows or A/D to move, Up arrow or W to jump.</p>
+      <p>Jump on benches, bushes and small trees to be safe!</p>
       <button id="start-button">Start Game</button>
     </div>
     
@@ -232,6 +291,7 @@
       const player = document.getElementById('player');
       const dog = document.getElementById('dog');
       const scoreDisplay = document.getElementById('score');
+      const levelDisplay = document.getElementById('level');
       const startScreen = document.getElementById('start-screen');
       const gameOverScreen = document.getElementById('game-over');
       const startButton = document.getElementById('start-button');
@@ -239,6 +299,7 @@
       const finalScore = document.getElementById('final-score');
       
       let score = 0;
+      let level = 1;
       let gameActive = false;
       let playerPos = { x: 100, y: 50 };
       let dogPos = { x: 50, y: 50 };
@@ -246,8 +307,12 @@
       let otherDogs = [];
       let poops = [];
       let obstacles = [];
+      let platforms = [];
       let dogPoopTimer = 0;
       let dogDirection = 1; // 1 for right, -1 for left
+      let dogSpeedMultiplier = 1;
+      let lastDogSpawnTime = 0;
+      let minimumDogSpawnInterval = 2000; // ms between dog spawns
       
       // Physics variables
       let isJumping = false;
@@ -255,21 +320,24 @@
       const gravity = 0.5;
       const jumpPower = 12;
       const groundLevel = 50; // Bottom position when on ground
+      let onPlatform = false;
+      let currentPlatformHeight = 0;
       
       let keys = {
         left: false,
         right: false,
-        up: false,
-        down: false
+        up: false
       };
 
       // Background elements
       function createBackgroundElements() {
+        const totalWorldWidth = 10000; // Large continuous world
+        
         // Create trees
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 40; i++) {
           const tree = document.createElement('div');
           tree.className = 'tree';
-          tree.style.left = (Math.random() * 2000) + 'px';
+          tree.style.left = (Math.random() * totalWorldWidth) + 'px';
           
           const treeTrunk = document.createElement('div');
           treeTrunk.className = 'tree-trunk';
@@ -283,19 +351,81 @@
           obstacles.push(tree);
         }
         
-        // Create benches
-        for (let i = 0; i < 5; i++) {
+        // Create benches (with platforms)
+        for (let i = 0; i < 20; i++) {
           const bench = document.createElement('div');
           bench.className = 'bench';
-          bench.style.left = (Math.random() * 2000 + 300) + 'px';
+          const benchX = Math.random() * totalWorldWidth + 300;
+          bench.style.left = benchX + 'px';
           gameContainer.appendChild(bench);
           obstacles.push(bench);
+          
+          // Add platform on the bench
+          createPlatform(benchX, 80, 30); // Width 80, height 30
         }
+        
+        // Create bushes (with platforms)
+        for (let i = 0; i < 15; i++) {
+          const bush = document.createElement('div');
+          bush.className = 'bush';
+          const bushX = Math.random() * totalWorldWidth + 500;
+          bush.style.left = bushX + 'px';
+          gameContainer.appendChild(bush);
+          obstacles.push(bush);
+          
+          // Add platform on the bush
+          createPlatform(bushX, 70, 40); // Width 70, height 40
+        }
+        
+        // Create small trees (with platforms)
+        for (let i = 0; i < 15; i++) {
+          const smallTree = document.createElement('div');
+          smallTree.className = 'small-tree';
+          const smallTreeX = Math.random() * totalWorldWidth + 800;
+          smallTree.style.left = smallTreeX + 'px';
+          
+          const smallTreeTrunk = document.createElement('div');
+          smallTreeTrunk.className = 'small-tree-trunk';
+          smallTree.appendChild(smallTreeTrunk);
+          
+          const smallTreeTop = document.createElement('div');
+          smallTreeTop.className = 'small-tree-top';
+          smallTree.appendChild(smallTreeTop);
+          
+          gameContainer.appendChild(smallTree);
+          obstacles.push(smallTree);
+          
+          // Add platform on the small tree
+          createPlatform(smallTreeX, 35, 45); // Width 35, height 45
+        }
+      }
+      
+      function createPlatform(x, width, height) {
+        const platformY = height; // Height above ground
+        const platform = {
+          x: x,
+          y: groundLevel + platformY,
+          width: width,
+          height: 5,
+          element: document.createElement('div')
+        };
+        
+        platform.element.className = 'platform';
+        platform.element.style.left = x + 'px';
+        platform.element.style.bottom = (groundLevel + platformY) + 'px';
+        platform.element.style.width = width + 'px';
+        platform.element.style.height = '5px';
+        
+        gameContainer.appendChild(platform.element);
+        platforms.push(platform);
       }
 
       function startGame() {
         score = 0;
+        level = 1;
+        dogSpeedMultiplier = 1;
         scoreDisplay.textContent = `Poop Collected: ${score}`;
+        levelDisplay.textContent = `Level: ${level}`;
         gameActive = true;
         startScreen.style.display = 'none';
         gameOverScreen.style.display = 'none';
@@ -308,15 +438,19 @@
         // Reset physics
         isJumping = false;
         jumpVelocity = 0;
+        onPlatform = false;
+        currentPlatformHeight = 0;
         
         // Clear existing elements
         otherDogs.forEach(dog => dog.remove());
         poops.forEach(poop => poop.remove());
         obstacles.forEach(obstacle => obstacle.remove());
+        platforms.forEach(platform => platform.element.remove());
         
         otherDogs = [];
         poops = [];
         obstacles = [];
+        platforms = [];
         
         createBackgroundElements();
         gameLoop();
@@ -352,14 +486,15 @@
           player.style.transform = 'scaleX(1)';
         }
         
-        // Jump only when on the ground
-        if (keys.up && !isJumping && playerPos.y <= groundLevel) {
+        // Jump only when on the ground or platform
+        if (keys.up && !isJumping && (playerPos.y <= groundLevel || onPlatform)) {
           isJumping = true;
           jumpVelocity = jumpPower;
+          onPlatform = false;
         }
         
-        // Keep player in bounds horizontally
-        playerPos.x = Math.max(0, Math.min(playerPos.x, gameContainer.offsetWidth - player.offsetWidth));
+        // Keep player in bounds horizontally (left side only)
+        playerPos.x = Math.max(0, playerPos.x);
         
         player.style.left = playerPos.x + 'px';
         player.style.bottom = playerPos.y + 'px';
@@ -371,12 +506,62 @@
           playerPos.y += jumpVelocity;
           jumpVelocity -= gravity;
           
-          // Check if landed
-          if (playerPos.y <= groundLevel) {
+          // Check if landed on ground
+          if (playerPos.y <= groundLevel && !onPlatform) {
             playerPos.y = groundLevel;
             isJumping = false;
             jumpVelocity = 0;
           }
+        }
+        
+        // Check for platform collisions
+        checkPlatformCollisions();
+      }
+      
+      function checkPlatformCollisions() {
+        onPlatform = false;
+        
+        platforms.forEach(platform => {
+          // Only check platforms that are close to player
+          if (Math.abs(platform.x - playerPos.x) < 200) {
+            const playerRight = playerPos.x + 40;
+            const playerLeft = playerPos.x;
+            const platformRight = platform.x + platform.width;
+            const platformLeft = platform.x;
+            
+            // Check if player is within horizontal bounds of platform
+            if (playerRight > platformLeft && playerLeft < platformRight) {
+              // Check if player is landing on the platform (falling and above platform)
+              if (jumpVelocity < 0 && 
+                  playerPos.y >= platform.y && 
+                  playerPos.y <= platform.y + 10) {
+                playerPos.y = platform.y;
+                isJumping = false;
+                jumpVelocity = 0;
+                onPlatform = true;
+                currentPlatformHeight = platform.y;
+              }
+              // Check if player is jumping up through platform (rising and below platform)
+              else if (jumpVelocity > 0 && 
+                      playerPos.y < platform.y - 60 && 
+                      playerPos.y + jumpVelocity > platform.y - 60) {
+                // Don't interfere with upward jump
+              }
+              // Check if player walks off the platform
+              else if (onPlatform && currentPlatformHeight === platform.y &&
+                      (playerRight < platformLeft || playerLeft > platformRight)) {
+                onPlatform = false;
+                isJumping = true;
+                jumpVelocity = 0;
+              }
+            }
+          }
+        });
+        
+        // If not on any platform and not jumping, apply gravity
+        if (!onPlatform && !isJumping && playerPos.y > groundLevel) {
+          isJumping = true;
+          jumpVelocity = 0;
         }
       }
 
@@ -402,26 +587,37 @@
       }
 
       function moveBackground() {
-        // Move all background elements
-        obstacles.forEach(obstacle => {
-          const currentPos = parseInt(obstacle.style.left);
-          if (keys.right) {
-            obstacle.style.left = (currentPos - 1) + 'px';
-            if (currentPos < -100) {
-              obstacle.style.left = (gameContainer.offsetWidth + Math.random() * 500) + 'px';
-            }
-          } else if (keys.left) {
-            obstacle.style.left = (currentPos + 1) + 'px';
-            if (currentPos > gameContainer.offsetWidth + 100) {
-              obstacle.style.left = (-100 - Math.random() * 500) + 'px';
-            }
-          }
-        });
+        // Move all background elements if player moves near edge
+        if (playerPos.x > gameContainer.offsetWidth * 0.7) {
+          const moveAmount = playerPos.x - gameContainer.offsetWidth * 0.7;
+          playerPos.x = gameContainer.offsetWidth * 0.7;
+          
+          // Move all obstacles, platforms, and other elements
+          obstacles.forEach(obstacle => {
+            const currentPos = parseInt(obstacle.style.left);
+            obstacle.style.left = (currentPos - moveAmount) + 'px';
+          });
+          
+          platforms.forEach(platform => {
+            platform.x -= moveAmount;
+            platform.element.style.left = platform.x + 'px';
+          });
+          
+          otherDogs.forEach(otherDog => {
+            const currentPos = parseInt(otherDog.style.left);
+            otherDog.style.left = (currentPos - moveAmount) + 'px';
+          });
+          
+          poops.forEach(poop => {
+            const currentPos = parseInt(poop.style.left);
+            poop.style.left = (currentPos - moveAmount) + 'px';
+          });
+        }
         
-        // Move other dogs
+        // Move other dogs at increasing speeds based on level
         otherDogs.forEach((otherDog, index) => {
           const currentPos = parseInt(otherDog.style.left);
-          otherDog.style.left = (currentPos - 2) + 'px';
+          otherDog.style.left = (currentPos - (2 * dogSpeedMultiplier)) + 'px';
           
           if (currentPos < -100) {
             otherDog.remove();
@@ -431,7 +627,10 @@
       }
 
       function spawnOtherDogs() {
-        if (Math.random() < 0.005) {
+        const now = Date.now();
+        
+        // Only spawn dogs if enough time has passed since the last spawn
+        if (now - lastDogSpawnTime > minimumDogSpawnInterval && Math.random() < 0.005) {
           const otherDog = document.createElement('div');
           otherDog.className = 'other-dog';
           otherDog.style.left = (gameContainer.offsetWidth + 50) + 'px';
@@ -458,6 +657,8 @@
           
           gameContainer.appendChild(otherDog);
           otherDogs.push(otherDog);
+          
+          lastDogSpawnTime = now;
         }
       }
 
@@ -481,6 +682,11 @@
             poops.splice(index, 1);
             score++;
             scoreDisplay.textContent = `Poop Collected: ${score}`;
+            
+            // Level up every 10 poops
+            if (score > 0 && score % 10 === 0) {
+              levelUp();
+            }
           }
         });
         
@@ -494,6 +700,12 @@
             gameOver();
           }
         });
+      }
+      
+      function levelUp() {
+        level++;
+        levelDisplay.textContent = `Level: ${level}`;
+        dogSpeedMultiplier = 1 + (level - 1) * 0.2; // Increase speed by 20% per level
       }
 
       function rectsIntersect(rect1, rect2) {
